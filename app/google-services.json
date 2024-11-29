@@ -1,0 +1,67 @@
+{
+  "project_info": {
+    "project_number": "448815287576",
+    "project_id": "attendance-35f2d",
+    "storage_bucket": "attendance-35f2d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:448815287576:android:8736b329b4f910cee6a26d",
+        "android_client_info": {
+          "package_name": "com.princesaha.attendance"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDYM7awj4pmkq5I6jk1G67OJDikV4yXlfY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:448815287576:android:411b94b7b0f5f463e6a26d",
+        "android_client_info": {
+          "package_name": "com.ml.quaterion.facenetdetection"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDYM7awj4pmkq5I6jk1G67OJDikV4yXlfY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:448815287576:android:4c22c5fb84a2c867e6a26d",
+        "android_client_info": {
+          "package_name": "com.princesaha.attendence"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDYM7awj4pmkq5I6jk1G67OJDikV4yXlfY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

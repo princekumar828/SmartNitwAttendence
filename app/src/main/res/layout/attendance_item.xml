@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_margin="8dp"
+    android:elevation="4dp"
+    android:layout_gravity="center"
+    app:cardCornerRadius="8dp"
+    app:cardBackgroundColor="#FFFFFF"
+    app:cardUseCompatPadding="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/dateTextView"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Date: 2024-11-28"
+            android:textSize="16sp"
+            android:textColor="#000000"
+            android:paddingBottom="4dp" />
+
+        <TextView
+            android:id="@+id/startTimeTextView"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Start Time: 10:00 AM"
+            android:textSize="14sp"
+            android:textColor="#333333"
+            android:paddingBottom="4dp" />
+
+        <TextView
+            android:id="@+id/endTimeTextView"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="End Time: 11:00 AM"
+            android:textSize="14sp"
+            android:textColor="#333333"
+            android:paddingBottom="4dp" />
+
+        <TextView
+            android:id="@+id/durationTextView"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Duration: 60 mins"
+            android:textSize="14sp"
+            android:textColor="#333333"
+            android:paddingBottom="4dp" />
+
+        <TextView
+            android:id="@+id/statusTextView"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Status: Present"
+            android:textSize="14sp"
+            android:textColor="#28A745"
+            android:paddingBottom="4dp" />
+
+        <TextView
+            android:id="@+id/startLocationTextView"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Start Location: (12.9716, 77.5946)"
+            android:textSize="12sp"
+            android:textColor="#333333"
+            android:paddingBottom="4dp" />
+
+        <TextView
+            android:id="@+id/endLocationTextView"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="End Location: (12.9716, 77.5946)"
+            android:textSize="12sp"
+            android:textColor="#333333"
+            android:paddingBottom="4dp" />
+
+    </LinearLayout>
+</androidx.cardview.widget.CardView>

@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/welcome_main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/mainback"
+    android:orientation="vertical"
+    tools:context=".Welcome">
+
+    <!-- Header Section -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:orientation="horizontal"
+        android:layout_marginTop="44dp"
+        android:layout_marginBottom="57dp">
+
+        <TextView
+            android:id="@+id/appName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="24dp"
+            android:fontFamily="@font/amiko"
+            android:text="Nitw.Attendance"
+            android:textColor="#FFFFFF"
+            android:textSize="32sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:id="@+id/sd"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="31dp"
+            android:background="@drawable/bar_nav"
+            android:orientation="horizontal" />
+    </LinearLayout>
+
+    <!-- App Logo -->
+    <ImageView
+        android:id="@+id/iv_app_logo"
+        android:layout_width="200dp"
+        android:layout_height="200dp"
+        android:layout_gravity="center"
+        android:layout_marginBottom="22dp"
+        android:scaleType="fitXY"
+        android:src="@drawable/img" />
+
+    <!-- Welcome Message -->
+    <TextView
+        android:id="@+id/tv_welcome_message"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_marginTop="24dp"
+        android:layout_marginBottom="24dp"
+        android:fontFamily="@font/amiko"
+        android:text="Welcome to nitw.in Top platform for Attendance"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:textStyle="bold" />
+
+    <!-- Login Button -->
+    <RelativeLayout
+        android:id="@+id/rl_login_button"
+        android:layout_width="330dp"
+        android:layout_height="54dp"
+        android:layout_gravity="center"
+        android:layout_marginTop="24dp"
+        android:layout_marginBottom="16dp"
+        android:background="@drawable/signbtn">
+
+        <TextView
+            android:id="@+id/tv_login_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerInParent="true"
+            android:fontFamily="@font/amiko"
+            android:text="Login"
+            android:textColor="#000000"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+    </RelativeLayout>
+
+    <!-- Signup Button -->
+    <RelativeLayout
+        android:id="@+id/rl_signup_button"
+        android:layout_width="330dp"
+        android:layout_height="54dp"
+        android:layout_gravity="center"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="16dp"
+        android:background="@drawable/signbtn">
+
+        <TextView
+            android:id="@+id/tv_signup_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerInParent="true"
+            android:fontFamily="@font/amiko"
+            android:text="Sign up"
+            android:textColor="#000000"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+    </RelativeLayout>
+
+    <!-- Social Media Text -->
+    <TextView
+        android:id="@+id/tv_social_media_prompt"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_marginTop="24dp"
+        android:layout_marginBottom="14dp"
+        android:fontFamily="@font/amiko"
+        android:gravity="center"
+        android:text="Or via social media"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+
+    <!-- Social Media Buttons -->
+    <LinearLayout
+        android:id="@+id/social_media_buttons"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_marginBottom="16dp"
+        android:orientation="horizontal"
+        android:weightSum="3">
+
+        <ImageButton
+            android:id="@+id/btn_facebook"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginLeft="8dp"
+            android:layout_marginRight="8dp"
+            android:layout_weight="1"
+            android:background="@drawable/fb" />
+
+        <ImageButton
+            android:id="@+id/btn_gmail"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginLeft="8dp"
+            android:layout_marginRight="8dp"
+            android:layout_weight="1"
+            android:background="@drawable/gmail" />
+
+        <ImageButton
+            android:id="@+id/btn_linkedin"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginLeft="8dp"
+            android:layout_marginRight="8dp"
+            android:layout_weight="1"
+            android:background="@drawable/linkdin" />
+    </LinearLayout>
+</LinearLayout>
