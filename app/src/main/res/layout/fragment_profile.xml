@@ -24,8 +24,28 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:scaleType="centerCrop"
-                android:src="@drawable/male" />
+                android:src="@drawable/male"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground" />
         </com.google.android.material.card.MaterialCardView>
+
+        <!-- Face Recognition Status -->
+        <TextView
+            android:id="@+id/faceUpdateStatusText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Tap image to select a photo"
+            android:textSize="12sp"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Upload Face Button -->
+        <Button
+            android:id="@+id/uploadFaceButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Register Face"
+            android:layout_marginBottom="16dp" />
 
         <!-- User Information -->
         <com.google.android.material.textfield.TextInputLayout

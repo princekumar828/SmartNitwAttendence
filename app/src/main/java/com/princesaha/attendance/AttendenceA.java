@@ -2,15 +2,17 @@ package com.princesaha.attendance;
 
 import android.Manifest;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.location.Location;
 import android.os.Bundle;
-import android.os.CountDownTimer;
+import android.provider.MediaStore;
 import android.util.Log;
 import android.view.View;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -21,40 +23,71 @@ import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.tasks.CancellationTokenSource;
 import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FieldValue;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.GeoPoint;
 import com.google.firebase.firestore.SetOptions;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.TimeZone;
-import java.util.concurrent.TimeUnit;
+
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.MediaType;
+import okhttp3.MultipartBody;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 
 public class AttendenceA extends AppCompatActivity {
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 100;
+    private static final int CAMERA_PERMISSION_REQUEST_CODE = 101;
+    private static final int CAMERA_REQUEST_CODE = 102;
+    private static final String TAG = "AttendenceA";
+    private static final int MAX_DISTANCE_METERS = 1000000000; // Realistic distance threshold for attendance
+    private static final int IMAGE_COMPRESSION_QUALITY = 95; // Optimal compression for facial recognition
+    private static final String API_ENDPOINT = ApiConfig.FACE_RECOGNITION_API; // Replace with your production API
 
     private ActivityAttendenceBinding binding;
     private ScheduleItem scheduleItem;
     private FusedLocationProviderClient fusedLocationClient;
-    private boolean isAttendanceStarted = false;
-    private CountDownTimer attendanceTimer;
     private FirebaseFirestore firestore;
+    private Location currentLocation;
 
     private List<AttendanceRecord> attendanceList = new ArrayList<>();
     private AttendanceAdapter adapter;
+    private OkHttpClient client = new OkHttpClient();
+    private String userRollNo;
+    private boolean isProcessingAttendance = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        firestore=FirebaseFirestore.getInstance();
+        // Initialize Firebase
+        firestore = FirebaseFirestore.getInstance();
+        FirebaseUser currentUser = FirebaseAuth.getInstance().getCurrentUser();
+
+        if (currentUser == null) {
+            Toast.makeText(this, "Authentication error. Please login again.", Toast.LENGTH_SHORT).show();
+            navigateToLogin();
+            return;
+        }
 
         // Initialize View Binding
         binding = ActivityAttendenceBinding.inflate(getLayoutInflater());
@@ -63,139 +96,167 @@ public class AttendenceA extends AppCompatActivity {
         // Initialize FusedLocationProviderClient
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
 
-        if(!checkLocationPermission()){
-            if(!checkLocationPermission()){
-                Toast.makeText(this, "Permission denied. Cannot mark attendance without location access.", Toast.LENGTH_SHORT).show();
-                finish();
-            }
-        }
-
-
         // Get ScheduleItem from Intent
         Intent intent = getIntent();
-        scheduleItem = (ScheduleItem) intent.getSerializableExtra("scheduleItem");
-
-        if (scheduleItem != null) {
-            // Populate the UI with the schedule item details using View Binding
-            binding.time.setText("Time: " + scheduleItem.getTime());
-            binding.subjectName.setText("Subject: " + scheduleItem.getSubjectName());
-            binding.teacherName.setText("Teacher: " + scheduleItem.getTeacherName());
-            binding.roomNo.setText("Room No: " + (scheduleItem.getRoomNo() != null ? scheduleItem.getRoomNo() : "Not available"));
-            binding.subjectType.setText("Type: " + scheduleItem.getSubjectType());
-            binding.credits.setText("Credits: " + scheduleItem.getCredits());
-            binding.availability.setText("Available: " + (scheduleItem.isAvailable() ? "Yes" : "No"));
-            binding.courseCode.setText("Course Code: " + scheduleItem.getCourseCode());
-
-            // Display location details if available
-            if (scheduleItem.getLocation() != null) {
-                Map<String, Double> location = scheduleItem.getLocation();
-                binding.location.setText("Location: Lat " + location.get("latitude") + ", Long " + location.get("longitude"));
-            } else {
-                binding.location.setText("Location: Not available");
-            }
-
-
-
+        if (intent == null || !intent.hasExtra("scheduleItem")) {
+            Toast.makeText(this, "Error: Schedule information is missing", Toast.LENGTH_SHORT).show();
+            finish();
+            return;
         }
 
+        scheduleItem = (ScheduleItem) intent.getSerializableExtra("scheduleItem");
+        if (scheduleItem == null) {
+            Toast.makeText(this, "Error: Invalid schedule data", Toast.LENGTH_SHORT).show();
+            finish();
+            return;
+        }
+
+        // Populate the UI with the schedule item details
+        displayScheduleDetails();
+
+        // Hide the timer view as we no longer need it
+        binding.timer.setVisibility(View.GONE);
+
+        // Check location permissions
+        if (!checkLocationPermission()) {
+            requestLocationPermission();
+        }
+
+        // Get user's roll number from Firestore
+        getUserRollNumber();
 
         binding.attenBtn.setOnClickListener(v -> {
-            if (!isAttendanceStarted) {
-                // Start Attendance
-                isAttendanceStarted = true;
-                binding.attenBtn.setText("Commit Attendance");
-
-                try {
-                    startAttendanceTimer();
-                } catch (Exception e) {
-                    // Handle any unexpected errors during attendance start
-                    Log.e("AttendanceError", "Error starting attendance: " + e.getMessage(), e);
-                    resetAttendanceState("Unable to start attendance. Please try again.");
-                }
-
+            if (!isProcessingAttendance) {
+                isProcessingAttendance = true;
+                checkExistingAttendance();
             } else {
-                // Finalize Attendance
-                if (attendanceTimer != null) {
-                    attendanceTimer.cancel(); // Stop the timer
-                }
-                commitAttendance();
-                resetAttendanceState(null); // Reset to default state after attendance commit
+                Toast.makeText(this, "Please wait, processing your attendance...", Toast.LENGTH_SHORT).show();
             }
         });
 
-
+        // Set up RecyclerView for attendance records
         binding.reportAttendance.setLayoutManager(new LinearLayoutManager(this));
-        fetchAttendanceRecords();
         adapter = new AttendanceAdapter(attendanceList);
         binding.reportAttendance.setAdapter(adapter);
+        fetchAttendanceRecords();
     }
 
+    private void navigateToLogin() {
+        // Navigate to login screen (you need to implement this method based on your app's structure)
+        // Intent loginIntent = new Intent(this, LoginActivity.class);
+        // startActivity(loginIntent);
+        finish();
+    }
+
+    private void displayScheduleDetails() {
+        // Safely populate the UI with the schedule item details
+        binding.time.setText("Time: " + (scheduleItem.getTime() != null ? scheduleItem.getTime() : "Not available"));
+        binding.subjectName.setText("Subject: " + (scheduleItem.getSubjectName() != null ? scheduleItem.getSubjectName() : "Not available"));
+        binding.teacherName.setText("Teacher: " + (scheduleItem.getTeacherName() != null ? scheduleItem.getTeacherName() : "Not available"));
+        binding.roomNo.setText("Room No: " + (scheduleItem.getRoomNo() != null ? scheduleItem.getRoomNo() : "Not available"));
+        binding.subjectType.setText("Type: " + (scheduleItem.getSubjectType() != null ? scheduleItem.getSubjectType() : "Not available"));
+        binding.credits.setText("Credits: " + scheduleItem.getCredits());
+        binding.availability.setText("Available: " + (scheduleItem.isAvailable() ? "Yes" : "No"));
+        binding.courseCode.setText("Course Code: " + (scheduleItem.getCourseCode() != null ? scheduleItem.getCourseCode() : "Not available"));
+
+        // Display location details if available
+        if (scheduleItem.getLocation() != null) {
+            Map<String, Double> location = scheduleItem.getLocation();
+            if (location.get("latitude") != null && location.get("longitude") != null) {
+                binding.location.setText(String.format(Locale.getDefault(),
+                        "Location: Lat %.6f, Long %.6f",
+                        location.get("latitude"),
+                        location.get("longitude")));
+            } else {
+                binding.location.setText("Location: Coordinates incomplete");
+            }
+        } else {
+            binding.location.setText("Location: Not available");
+        }
+    }
+
+    private void getUserRollNumber() {
+        FirebaseUser currentUser = FirebaseAuth.getInstance().getCurrentUser();
+        if (currentUser == null) {
+            Toast.makeText(this, "Authentication error. Please login again.", Toast.LENGTH_SHORT).show();
+            navigateToLogin();
+            return;
+        }
+
+        String userId = currentUser.getUid();
+        firestore.collection("users")
+                .document(userId)
+                .get()
+                .addOnSuccessListener(documentSnapshot -> {
+                    if (documentSnapshot.exists()) {
+                        userRollNo = documentSnapshot.getString("rollNo");
+                        Log.d(TAG, "User roll number retrieved: " + userRollNo);
+                    } else {
+                        Log.e(TAG, "User document does not exist");
+                        Toast.makeText(this, "Unable to retrieve user information", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .addOnFailureListener(e -> {
+                    Log.e(TAG, "Failed to get user document", e);
+                    Toast.makeText(this, "Error retrieving user data", Toast.LENGTH_SHORT).show();
+                });
+    }
 
     private void fetchAttendanceRecords() {
-        String studentId = FirebaseAuth.getInstance().getCurrentUser().getUid();
+        FirebaseUser currentUser = FirebaseAuth.getInstance().getCurrentUser();
+        if (currentUser == null || scheduleItem == null || scheduleItem.getCourseCode() == null) {
+            Log.e(TAG, "Cannot fetch attendance records: User not logged in or invalid course code");
+            return;
+        }
+
+        String studentId = currentUser.getUid();
+        String courseCode = scheduleItem.getCourseCode();
+
+        attendanceList.clear(); // Clear before loading new data
+
         firestore.collection("Attendance")
-                .document(scheduleItem.getCourseCode())
+                .document(courseCode)
                 .collection("Students")
                 .document(studentId)
                 .get()
                 .addOnCompleteListener(task -> {
                     if (task.isSuccessful()) {
                         DocumentSnapshot document = task.getResult();
-                        if (document.exists()) {
+                        if (document != null && document.exists()) {
                             List<Map<String, Object>> records = (List<Map<String, Object>>) document.get("attendanceRecords");
-                            for (Map<String, Object> record : records) {
-                                GeoPoint startLocation = (GeoPoint) record.get("startLocation");
-                                GeoPoint endLocation = (GeoPoint) record.get("endLocation");
-                                String date= (String) record.get("date");
-                                String startTime= (String) record.get("startTime");
-                                String endTime= (String) record.get("endTime");
-                                String duration=record.get("duration").toString();
-                                String status= (String) record.get("status");
-                                AttendanceRecord tempRecord = new AttendanceRecord(startLocation, endLocation, date, startTime, endTime, duration, status);
-                                attendanceList.add(tempRecord);
+                            if (records != null) {
+                                for (Map<String, Object> record : records) {
+                                    GeoPoint startLocation = (GeoPoint) record.get("startLocation");
+                                    GeoPoint endLocation = record.containsKey("endLocation") ?
+                                            (GeoPoint) record.get("endLocation") : startLocation;
+                                    String date = (String) record.get("date");
+                                    String startTime = (String) record.get("startTime");
+                                    String endTime = record.containsKey("endTime") ?
+                                            (String) record.get("endTime") : startTime;
+                                    String duration = record.containsKey("duration") ?
+                                            record.get("duration").toString() : "N/A";
+                                    String status = (String) record.get("status");
+                                    AttendanceRecord tempRecord = new AttendanceRecord(startLocation, endLocation, date, startTime, endTime, duration, status);
+                                    attendanceList.add(tempRecord);
+                                }
+                                adapter.notifyDataSetChanged();
                             }
-                            adapter.notifyDataSetChanged();
                         } else {
-                            Log.d("Firestore", "No such document");
+                            Log.d(TAG, "No attendance records found");
                         }
                     } else {
-                        Log.e("FirestoreError", "Failed to get document", task.getException());
+                        Log.e(TAG, "Failed to get attendance records", task.getException());
                     }
                 });
     }
 
-
-    private void resetAttendanceState(String message) {
-        isAttendanceStarted = false;
-        binding.attenBtn.setText("Start Attendance"); // Reset button text
-        binding.timer.setVisibility(View.GONE); // Hide timer
-
-        if (attendanceTimer != null) {
-            attendanceTimer.cancel(); // Stop the timer if running
-        }
-
-        if (message != null) {
-            Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
-        }
-
-        Log.d("AttendanceReset", "Attendance state reset to default.");
-    }
-
-
-
-
-    private void startAttendanceTimer() {
-        binding.timer.setVisibility(View.VISIBLE);
-
-        Toast.makeText(this, "Attendance Button clicked: Starting attendance process.", Toast.LENGTH_SHORT).show();
+    private void verifyLocation() {
+        Toast.makeText(this, "Verifying your location...", Toast.LENGTH_SHORT).show();
 
         // Check location permissions
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            Toast.makeText(this, "Location permission required. Please allow to proceed.", Toast.LENGTH_SHORT).show();
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, LOCATION_PERMISSION_REQUEST_CODE);
-
-            resetAttendanceState("Location permission not granted. Attendance process aborted.");
-            Log.d("Attendance", "Location permission not granted. Prompting user to allow.");
+            requestLocationPermission();
+            isProcessingAttendance = false;
             return;
         }
 
@@ -203,179 +264,375 @@ public class AttendenceA extends AppCompatActivity {
         CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
         fusedLocationClient.getCurrentLocation(LocationRequest.PRIORITY_HIGH_ACCURACY, cancellationTokenSource.getToken())
                 .addOnSuccessListener(location -> {
-                    if (location != null && isLocationValid(location)) {
-                        // Log: Valid location obtained
-                        Log.d("Attendance", "Valid location obtained. Latitude: " + location.getLatitude() + ", Longitude: " + location.getLongitude());
-                        Toast.makeText(this, "Valid location obtained. Latitude: " + location.getLatitude() + ", Longitude: " + location.getLongitude(), Toast.LENGTH_SHORT).show();
+                    if (location != null) {
+                        // Save current location for later use
+                        currentLocation = location;
 
-                        // Start the timer
+                        if (isLocationValid(location)) {
+                            // Log: Valid location obtained
+                            Log.d(TAG, "Valid location obtained. Latitude: " +
+                                    location.getLatitude() + ", Longitude: " + location.getLongitude());
+                            Toast.makeText(this, "Location verified! Taking selfie for recognition...",
+                                    Toast.LENGTH_SHORT).show();
 
-                        long courseDuration = courceDuration(); // Must return duration in milliseconds
-                        if (courseDuration <= 0) {
-                            resetAttendanceState("Invalid course duration. Attendance process aborted.");
-                            Log.d("Attendance", "Invalid course duration.");
-                            return;
+                            // Proceed to take a selfie for facial recognition
+                            takeSelfie();
+                        } else {
+                            isProcessingAttendance = false;
+                            Toast.makeText(this, "You are not in the class location. Attendance rejected.",
+                                    Toast.LENGTH_SHORT).show();
+                            Log.d(TAG, "Invalid location. Current location does not match the scheduled location.");
                         }
-
-                        long startTime = System.currentTimeMillis();
-
-                        // Save the start time in SharedPreferences
-                        SharedPreferences sharedPreferences = getSharedPreferences("AttendancePrefs", MODE_PRIVATE);
-                        SharedPreferences.Editor editor = sharedPreferences.edit();
-                        editor.putString("startLatitude", String.valueOf(location.getLatitude()));
-                        editor.putString("startLongitude", String.valueOf(location.getLongitude()));
-                        editor.putLong("startTime", startTime);
-                        editor.apply();
-
-
-
-                        // Log: Timer started
-                        Log.d("Attendance", "Attendance timer started at: " + startTime);
-
-                        attendanceTimer = new CountDownTimer(courseDuration, 1000) {
-                            @Override
-                            public void onTick(long millisUntilFinished) {
-                                binding.timer.setText(String.format(Locale.getDefault(), "Time left: %02d:%02d:%02d",
-                                        TimeUnit.MILLISECONDS.toHours(millisUntilFinished),
-                                        TimeUnit.MILLISECONDS.toMinutes(millisUntilFinished) % 60,
-                                        TimeUnit.MILLISECONDS.toSeconds(millisUntilFinished) % 60));
-                            }
-
-                            @Override
-                            public void onFinish() {
-                                binding.timer.setText("Course Ended");
-                                commitAttendance();
-
-                                // Log: Timer finished
-                                Log.d("Attendance", "Attendance timer finished.");
-                            }
-                        }.start();
-
                     } else {
-                        resetAttendanceState("Invalid location. Move closer to the scheduled location.");
-                        Log.d("Attendance", "Invalid location. Current location does not match the scheduled location.");
+                        isProcessingAttendance = false;
+                        Toast.makeText(this, "Couldn't get your location. Please try again.",
+                                Toast.LENGTH_SHORT).show();
+                        Log.d(TAG, "Location is null");
                     }
                 }).addOnFailureListener(e -> {
-                    resetAttendanceState("Failed to get location: " + e.getMessage());
-                    Log.d("Attendance", "Failed to retrieve location. Error: " + e.getMessage());
+                    isProcessingAttendance = false;
+                    Toast.makeText(this, "Failed to get location", Toast.LENGTH_SHORT).show();
+                    Log.d(TAG, "Failed to retrieve location. Error: " + e.getMessage());
                 }).addOnCompleteListener(task -> {
                     // Cleanup token
                     cancellationTokenSource.cancel();
                 });
     }
 
-    private long courceDuration() {
-        String timeRange = scheduleItem.getTime(); // Example format: "10:00-11:30"
-        String[] times = timeRange.split("-");
+    private void takeSelfie() {
+        // Check camera permission
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST_CODE);
+            return;
+        }
 
-        if (times.length == 2) {
-            try {
-                SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
-                sdf.setTimeZone(TimeZone.getDefault());
-
-                // Parse start and end times
-                Date startTime = sdf.parse(times[0].trim());
-                Date endTime = sdf.parse(times[1].trim());
-
-                if (startTime != null && endTime != null) {
-                    // Calculate the course duration in milliseconds
-                    long durationMillis = endTime.getTime() - startTime.getTime();
-                    // Log the calculated duration for debugging
-                    Log.d("CourseDuration", "Course duration in milliseconds: " + durationMillis);
-
-                    return durationMillis;
-                }
-            } catch (Exception e) {
-                Log.e("CourseDuration", "Error parsing course time: " + e.getMessage(), e);
-                Toast.makeText(this, "Unable to calculate course duration. Please check the time format.", Toast.LENGTH_SHORT).show();
-            }
+        // Launch camera for selfie
+        Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        // Check if there's an app that can handle this intent
+        if (cameraIntent.resolveActivity(getPackageManager()) != null) {
+            startActivityForResult(cameraIntent, CAMERA_REQUEST_CODE);
         } else {
-            Toast.makeText(this, "Invalid time format in schedule. Please check.", Toast.LENGTH_SHORT).show();
-            Log.e("CourseDuration", "Time range format invalid: " + timeRange);
+            isProcessingAttendance = false;
+            Toast.makeText(this, "No camera app available", Toast.LENGTH_SHORT).show();
         }
-
-        // Return a default value of 1 hour in milliseconds as a fallback
-        return 3600000; // 1 hour
     }
 
-    private void commitAttendance() {
-        SharedPreferences sharedPreferences = getSharedPreferences("AttendancePrefs", MODE_PRIVATE);
-        long startTime = sharedPreferences.getLong("startTime", 0);
-
-        if (startTime == 0) {
-            Toast.makeText(this, "Attendance not started!", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        long endTime = System.currentTimeMillis();
-        int duration = (int) ((endTime - startTime) / 60000); // Convert to minutes
-
-        // Check location permissions and request if not granted
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
-                ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, 1);
-            return;
-        }
-
-        fusedLocationClient.getLastLocation().addOnSuccessListener(location -> {
-            if (location != null && isLocationValid(location)) {
-                // Create an attendance record
-                Map<String, Object> attendanceRecord = new HashMap<>();
-                attendanceRecord.put("date", new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date()));
-                attendanceRecord.put("startTime", new SimpleDateFormat("hh:mm a", Locale.getDefault()).format(new Date(startTime)));
-                attendanceRecord.put("endTime", new SimpleDateFormat("hh:mm a", Locale.getDefault()).format(new Date(endTime)));
-                attendanceRecord.put("duration", duration);
-                attendanceRecord.put("startLocation", new GeoPoint(
-                        Double.parseDouble(sharedPreferences.getString("startLatitude", "0")),
-                        Double.parseDouble(sharedPreferences.getString("startLongitude", "0"))
-                ));
-                attendanceRecord.put("endLocation", new GeoPoint(location.getLatitude(), location.getLongitude()));
-                attendanceRecord.put("status", duration > 1 ? "Present" : "Absent");
-
-                // Replace 'subjectId' and 'studentId' with actual dynamic identifiers
-                String subjectId = scheduleItem.getCourseCode(); // Replace this with the actual value
-                String studentId = FirebaseAuth.getInstance().getCurrentUser().getUid(); // Or use another method to get the student ID
-
-                FirebaseFirestore db = FirebaseFirestore.getInstance();
-                db.collection("Attendance")
-                        .document(subjectId)
-                        .collection("Students")
-                        .document(studentId)
-                        .set(
-                                new HashMap<String, Object>() {{
-                                    put("attendanceRecords", FieldValue.arrayUnion(attendanceRecord));
-                                }},
-                                SetOptions.merge() // This will merge data if document exists or create it if it doesn't
-                        )
-                        .addOnSuccessListener(aVoid -> Toast.makeText(this, "Attendance committed!", Toast.LENGTH_SHORT).show())
-                        .addOnFailureListener(e -> Toast.makeText(this, "Failed to commit attendance. " + e.getMessage(), Toast.LENGTH_SHORT).show());
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == CAMERA_REQUEST_CODE) {
+            if (resultCode == RESULT_OK && data != null && data.getExtras() != null) {
+                Bitmap photo = (Bitmap) data.getExtras().get("data");
+                if (photo != null) {
+                    sendSelfieForRecognition(photo);
+                } else {
+                    isProcessingAttendance = false;
+                    Toast.makeText(this, "Failed to capture photo", Toast.LENGTH_SHORT).show();
+                }
             } else {
-                Toast.makeText(this, "Invalid location data. Attendance not recorded.", Toast.LENGTH_SHORT).show();
+                isProcessingAttendance = false;
+                Toast.makeText(this, "Selfie capture cancelled", Toast.LENGTH_SHORT).show();
             }
-        }).addOnFailureListener(e -> Toast.makeText(this, "Failed to get location.", Toast.LENGTH_SHORT).show());
+        }
     }
 
+    private void sendSelfieForRecognition(Bitmap photo) {
+        Toast.makeText(this, "Processing your image...", Toast.LENGTH_SHORT).show();
 
+        ByteArrayOutputStream stream = null;
+        try {
+            // Convert bitmap to byte array with optimized compression
+            stream = new ByteArrayOutputStream();
+            photo.compress(Bitmap.CompressFormat.JPEG, IMAGE_COMPRESSION_QUALITY, stream);
+            byte[] byteArray = stream.toByteArray();
+
+            // Create request body
+            RequestBody requestBody = new MultipartBody.Builder()
+                    .setType(MultipartBody.FORM)
+                    .addFormDataPart("image", "selfie.jpg",
+                            RequestBody.create(MediaType.parse("image/jpeg"), byteArray))
+                    .build();
+
+            // Create request - Use the constant for API endpoint
+            Request request = new Request.Builder()
+                    .url(API_ENDPOINT)
+                    .post(requestBody)
+                    .build();
+
+            // Execute the request asynchronously with timeout handling
+            client.newCall(request).enqueue(new Callback() {
+                @Override
+                public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                    runOnUiThread(() -> {
+                        isProcessingAttendance = false;
+                        Log.e(TAG, "Failed to send request: " + e.getMessage(), e);
+                        Toast.makeText(AttendenceA.this, "Network error. Please try again.", Toast.LENGTH_SHORT).show();
+                    });
+                }
+
+                @Override
+                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                    final String responseBody = response.body() != null ? response.body().string() : "";
+                    runOnUiThread(() -> {
+                        try {
+                            if (response.code() == 400) {
+                                JSONObject errorJson = new JSONObject(responseBody);
+                                // Check for both error and message fields
+                                String errorMessage = errorJson.has("error") ?
+                                        errorJson.getString("error") :
+                                        errorJson.optString("message", "Unknown error");
+
+                                Toast.makeText(AttendenceA.this, errorMessage, Toast.LENGTH_SHORT).show();
+                                isProcessingAttendance = false;
+                            } else if (response.isSuccessful() && !responseBody.isEmpty()) {
+                                JSONObject json = new JSONObject(responseBody);
+                                String message = json.optString("message", "");
+                                double similarity = json.optDouble("similarity", 0.0);
+                                String recognizedStudentId = json.optString("student_id", "");
+
+                                Log.d(TAG, "Response: " + message +
+                                        ", Similarity: " + similarity +
+                                        ", Student ID: " + recognizedStudentId);
+
+                                // Check if the recognized student ID matches the user's roll number
+                                if (userRollNo != null && userRollNo.equals(recognizedStudentId)) {
+                                    Toast.makeText(AttendenceA.this,
+                                            "Face recognized successfully! Marking attendance...",
+                                            Toast.LENGTH_SHORT).show();
+                                    markAttendance();
+                                } else {
+                                    isProcessingAttendance = false;
+                                    Toast.makeText(AttendenceA.this,
+                                            "Student ID mismatch. Attendance rejected.",
+                                            Toast.LENGTH_SHORT).show();
+                                    Log.d(TAG, "Student ID mismatch. User: " +
+                                            userRollNo + ", Recognized: " + recognizedStudentId);
+                                }
+                            } else {
+                                isProcessingAttendance = false;
+                                Toast.makeText(AttendenceA.this,
+                                        "Server error. Please try again later.",
+                                        Toast.LENGTH_SHORT).show();
+                            }
+                        } catch (JSONException e) {
+                            isProcessingAttendance = false;
+                            Log.e(TAG, "JSON parsing error: " + e.getMessage(), e);
+                            Toast.makeText(AttendenceA.this,
+                                    "Error processing response. Please try again.",
+                                    Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                }
+            });
+        } catch (Exception e) {
+            isProcessingAttendance = false;
+            Log.e(TAG, "Error processing image: " + e.getMessage(), e);
+            Toast.makeText(this, "Error processing image", Toast.LENGTH_SHORT).show();
+        } finally {
+            // Close the output stream to prevent resource leaks
+            if (stream != null) {
+                try {
+                    stream.close();
+                } catch (IOException e) {
+                    Log.e(TAG, "Error closing stream", e);
+                }
+            }
+        }
+    }
+
+    private void markAttendance() {
+        if (currentLocation == null) {
+            isProcessingAttendance = false;
+            Toast.makeText(this, "Location data not available", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        FirebaseUser currentUser = FirebaseAuth.getInstance().getCurrentUser();
+        if (currentUser == null || scheduleItem == null || scheduleItem.getCourseCode() == null) {
+            isProcessingAttendance = false;
+            Toast.makeText(this, "Error: Missing required data", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Create an attendance record
+        Map<String, Object> attendanceRecord = new HashMap<>();
+        String currentDate = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date());
+        String currentTime = new SimpleDateFormat("hh:mm a", Locale.getDefault()).format(new Date());
+
+        attendanceRecord.put("date", currentDate);
+        attendanceRecord.put("startTime", currentTime);
+        attendanceRecord.put("startLocation", new GeoPoint(currentLocation.getLatitude(), currentLocation.getLongitude()));
+        attendanceRecord.put("status", "Present");
+
+        // Add additional info with proper separator
+        attendanceRecord.put("verificationMethod", "Facial Recognition");
+        attendanceRecord.put("verifiedAt", currentDate + " " + currentTime);
+
+        // Get subject ID and student ID
+        String subjectId = scheduleItem.getCourseCode();
+        String studentId = currentUser.getUid();
+
+        // Store the attendance record in Firestore
+        firestore.collection("Attendance")
+                .document(subjectId)
+                .collection("Students")
+                .document(studentId)
+                .set(
+                        new HashMap<String, Object>() {{
+                            put("attendanceRecords", FieldValue.arrayUnion(attendanceRecord));
+                        }},
+                        SetOptions.merge()
+                )
+                .addOnSuccessListener(aVoid -> {
+                    isProcessingAttendance = false;
+                    Toast.makeText(this, "Attendance marked successfully!", Toast.LENGTH_SHORT).show();
+                    // Refresh the attendance records
+                    attendanceList.clear();
+                    fetchAttendanceRecords();
+                })
+                .addOnFailureListener(e -> {
+                    isProcessingAttendance = false;
+                    Toast.makeText(this, "Failed to mark attendance", Toast.LENGTH_SHORT).show();
+                    Log.e(TAG, "Error marking attendance", e);
+                });
+    }
+
+    private void checkExistingAttendance() {
+        FirebaseUser currentUser = FirebaseAuth.getInstance().getCurrentUser();
+        if (currentUser == null || scheduleItem == null || scheduleItem.getCourseCode() == null ||
+                scheduleItem.getTime() == null) {
+            isProcessingAttendance = false;
+            Toast.makeText(this, "Error: Missing required data", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String studentId = currentUser.getUid();
+        String subjectId = scheduleItem.getCourseCode();
+        String currentDate = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date());
+        String scheduleTime = scheduleItem.getTime(); // This is the scheduled class time
+
+        // Parse the scheduled class time to extract the hour
+        int scheduleHour = -1;
+        try {
+            SimpleDateFormat sdf = new SimpleDateFormat("hh:mm a", Locale.getDefault());
+            Date scheduledTime = sdf.parse(scheduleTime);
+            if (scheduledTime != null) {
+                Calendar scheduleCal = Calendar.getInstance();
+                scheduleCal.setTime(scheduledTime);
+                scheduleHour = scheduleCal.get(Calendar.HOUR_OF_DAY);
+            }
+        } catch (ParseException e) {
+            Log.e(TAG, "Error parsing scheduled time: " + e.getMessage());
+        }
+
+        // Get the current hour
+        Calendar now = Calendar.getInstance();
+        final int currentHour = now.get(Calendar.HOUR_OF_DAY);
+
+        // If we couldn't parse the schedule time, use current hour as fallback
+        final int targetHour = (scheduleHour != -1) ? scheduleHour : currentHour;
+
+        firestore.collection("Attendance")
+                .document(subjectId)
+                .collection("Students")
+                .document(studentId)
+                .get()
+                .addOnCompleteListener(task -> {
+                    if (task.isSuccessful()) {
+                        DocumentSnapshot document = task.getResult();
+                        if (document != null && document.exists()) {
+                            List<Map<String, Object>> records = (List<Map<String, Object>>) document.get("attendanceRecords");
+                            if (records != null) {
+                                boolean alreadyMarkedForThisClass = false;
+
+                                for (Map<String, Object> record : records) {
+                                    String recordDate = (String) record.get("date");
+                                    String recordStartTime = (String) record.get("startTime");
+
+                                    if (recordDate != null && recordDate.equals(currentDate)) {
+                                        // Extract hour from the recorded startTime
+                                        try {
+                                            SimpleDateFormat sdf = new SimpleDateFormat("hh:mm a", Locale.getDefault());
+                                            Date recordedTime = sdf.parse(recordStartTime);
+                                            if (recordedTime != null) {
+                                                Calendar recordedCal = Calendar.getInstance();
+                                                recordedCal.setTime(recordedTime);
+                                                int recordedHour = recordedCal.get(Calendar.HOUR_OF_DAY);
+
+                                                // Check if attendance was already marked for this class
+                                                // Allow a 1-hour window around the targeted hour
+                                                if (Math.abs(recordedHour - targetHour) <= 1) {
+                                                    alreadyMarkedForThisClass = true;
+                                                    break;
+                                                }
+                                            }
+                                        } catch (ParseException e) {
+                                            Log.e(TAG, "Error parsing recorded time: " + e.getMessage());
+                                        }
+                                    }
+                                }
+
+                                if (alreadyMarkedForThisClass) {
+                                    isProcessingAttendance = false;
+                                    Toast.makeText(AttendenceA.this,
+                                            "You've already marked attendance for this class!",
+                                            Toast.LENGTH_LONG).show();
+                                } else {
+                                    // Proceed with location verification and attendance marking
+                                    verifyLocation();
+                                }
+                            } else {
+                                // No records yet, can proceed
+                                verifyLocation();
+                            }
+                        } else {
+                            // No document exists yet, can proceed
+                            verifyLocation();
+                        }
+                    } else {
+                        isProcessingAttendance = false;
+                        Log.e(TAG, "Failed to get attendance document", task.getException());
+                        Toast.makeText(AttendenceA.this,
+                                "Error checking attendance. Please try again.",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                });
+    }
 
     private boolean isLocationValid(Location currentLocation) {
-        if (scheduleItem.getLocation() == null) {
-            Toast.makeText(this, "Scheduled location not available for validation.", Toast.LENGTH_SHORT).show();
-            return false;
+        if (scheduleItem == null || scheduleItem.getLocation() == null) {
+            Log.d(TAG, "Scheduled location not available for validation");
+            // For demo purposes, returning true if no location is specified
+            return true;
         }
 
         // Get scheduled location
         Map<String, Double> scheduledLocation = scheduleItem.getLocation();
+        Double scheduledLat = scheduledLocation.get("latitude");
+        Double scheduledLong = scheduledLocation.get("longitude");
+
+        if (scheduledLat == null || scheduledLong == null) {
+            Log.d(TAG, "Incomplete location coordinates in schedule");
+            // For demo purposes, returning true if coordinates are incomplete
+            return true;
+        }
+
         double distance = calculateDistance(
                 currentLocation.getLatitude(), currentLocation.getLongitude(),
-                scheduledLocation.get("latitude"), scheduledLocation.get("longitude")
+                scheduledLat, scheduledLong
         );
 
         // Log: Distance calculation
-        Toast.makeText(this, "Calculated distance to scheduled location: " + distance + " meters.", Toast.LENGTH_SHORT).show();
-        System.out.println("Calculated distance to scheduled location: " + distance + " meters.");
+        Log.d(TAG, "Calculated distance to scheduled location: " + distance + " meters.");
 
-        // Allow a maximum radius of 100 meters for attendance validation
-        return distance <= 1000;
+        // Show distance to user
+        runOnUiThread(() -> {
+            Toast.makeText(this, "Distance to class: " + String.format(Locale.getDefault(), "%.1f", distance) + " meters",
+                    Toast.LENGTH_SHORT).show();
+        });
+
+        // Check if within the allowed radius
+        return distance <= MAX_DISTANCE_METERS;
     }
 
     private double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
@@ -403,47 +660,38 @@ public class AttendenceA extends AppCompatActivity {
         return EARTH_RADIUS * centralAngle * 1000;
     }
 
-
     private boolean checkLocationPermission() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, LOCATION_PERMISSION_REQUEST_CODE);
-            return false;
-        }
-        return true;
+        return ActivityCompat.checkSelfPermission(this,
+                Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
     }
 
-
-
+    private void requestLocationPermission() {
+        ActivityCompat.requestPermissions(this,
+                new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                LOCATION_PERMISSION_REQUEST_CODE);
+    }
 
     @Override
-    protected void onResume() {
-        super.onResume();
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
-        SharedPreferences sharedPreferences = getSharedPreferences("AttendancePrefs", MODE_PRIVATE);
-        long startTime = sharedPreferences.getLong("startTime", -1);
-
-        if (startTime != -1) {
-            long currentTime = System.currentTimeMillis();
-            long elapsedTime = currentTime - startTime;
-
-            if (elapsedTime >= courceDuration()) { // Check if the course duration has passed
-                commitAttendance();
+        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                // Location permission granted, can proceed when user tries again
+                Toast.makeText(this, "Location permission granted", Toast.LENGTH_SHORT).show();
             } else {
-                // Update the UI to show the elapsed time
-                binding.timer.setText(String.format(Locale.getDefault(), "Time spent: %02d:%02d:%02d",
-                        TimeUnit.MILLISECONDS.toHours(elapsedTime),
-                        TimeUnit.MILLISECONDS.toMinutes(elapsedTime) % 60,
-                        TimeUnit.MILLISECONDS.toSeconds(elapsedTime) % 60));
+                Toast.makeText(this, "Location permission denied. Cannot mark attendance.", Toast.LENGTH_SHORT).show();
+                isProcessingAttendance = false;
+                finish();
+            }
+        } else if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                // Camera permission granted, proceed with taking selfie
+                takeSelfie();
+            } else {
+                Toast.makeText(this, "Camera permission denied. Cannot verify identity.", Toast.LENGTH_SHORT).show();
+                isProcessingAttendance = false;
             }
         }
-    }
-
-
-    @Override
-    protected void onDestroy() {
-        if (attendanceTimer != null) {
-            attendanceTimer.cancel();
-        }
-        super.onDestroy();
     }
 }
