@@ -71,16 +71,6 @@ public class Chat extends Fragment {
         recyclerViewMessages.setLayoutManager(new LinearLayoutManager(requireContext()));
         recyclerViewMessages.setAdapter(messageAdapter);
 
-        recyclerViewMessages.addOnScrollListener(new RecyclerView.OnScrollListener() {
-            @Override
-            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
-                super.onScrolled(recyclerView, dx, dy);
-                if (dy > 0 && isUserAtBottom()) {
-                    recyclerView.smoothScrollToPosition(messageList.size() - 1);
-                }
-            }
-        });
-
         // Send message listener
         buttonSend.setOnClickListener(v -> sendMessage());
 
@@ -94,9 +84,12 @@ public class Chat extends Fragment {
     private boolean isUserAtBottom() {
         LinearLayoutManager layoutManager = (LinearLayoutManager) recyclerViewMessages.getLayoutManager();
         if (layoutManager != null) {
+            int visibleItemCount = layoutManager.getChildCount();
             int totalItemCount = layoutManager.getItemCount();
-            int lastVisibleItem = layoutManager.findLastVisibleItemPosition();
-            return lastVisibleItem == totalItemCount - 1;
+            int firstVisibleItemPosition = layoutManager.findFirstVisibleItemPosition();
+
+            // Consider user at bottom if they're seeing the last item or close to it
+            return (visibleItemCount + firstVisibleItemPosition >= totalItemCount - 2);
         }
         return false;
     }
@@ -130,7 +123,10 @@ public class Chat extends Fragment {
                     .addOnSuccessListener(aVoid -> {
                         // Clear input after successful send
                         editTextMessage.setText("");
-                        recyclerViewMessages.scrollToPosition(messageList.size() - 1);
+                        // Use post to ensure UI updates before scrolling
+                        recyclerViewMessages.post(() ->
+                                recyclerViewMessages.smoothScrollToPosition(messageList.size())
+                        );
                     })
                     .addOnFailureListener(e -> {
                         Toast.makeText(requireContext(),
@@ -145,6 +141,13 @@ public class Chat extends Fragment {
                 .addValueEventListener(new ValueEventListener() {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        // Check if user was at bottom before update
+                        LinearLayoutManager layoutManager = (LinearLayoutManager) recyclerViewMessages.getLayoutManager();
+                        int lastVisiblePosition = layoutManager.findLastVisibleItemPosition();
+                        int previousItemCount = messageAdapter.getItemCount();
+                        boolean wasAtBottom = (lastVisiblePosition >= previousItemCount - 2);
+
+                        // Update message list
                         messageList.clear();
                         for (DataSnapshot dataSnapshot : snapshot.getChildren()) {
                             ChatMessage message = dataSnapshot.getValue(ChatMessage.class);
@@ -159,9 +162,11 @@ public class Chat extends Fragment {
 
                         messageAdapter.notifyDataSetChanged();
 
-                        // Scroll to the bottom if a new message is added
-                        if (!messageList.isEmpty() && isUserAtBottom()) {
-                            recyclerViewMessages.scrollToPosition(messageList.size() - 1);
+                        // Scroll to the bottom if a new message is added and user was already at bottom
+                        if (wasAtBottom || messageList.size() > previousItemCount) {
+                            recyclerViewMessages.post(() ->
+                                    recyclerViewMessages.smoothScrollToPosition(messageList.size() - 1)
+                            );
                         }
                     }
 

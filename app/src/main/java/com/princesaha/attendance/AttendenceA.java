@@ -232,16 +232,12 @@ public class AttendenceA extends AppCompatActivity {
                             if (records != null) {
                                 for (Map<String, Object> record : records) {
                                     GeoPoint startLocation = (GeoPoint) record.get("startLocation");
-                                    GeoPoint endLocation = record.containsKey("endLocation") ?
-                                            (GeoPoint) record.get("endLocation") : startLocation;
                                     String date = (String) record.get("date");
                                     String startTime = (String) record.get("startTime");
-                                    String endTime = record.containsKey("endTime") ?
-                                            (String) record.get("endTime") : startTime;
-                                    String duration = record.containsKey("duration") ?
-                                            record.get("duration").toString() : "N/A";
                                     String status = (String) record.get("status");
-                                    AttendanceRecord tempRecord = new AttendanceRecord(startLocation, endLocation, date, startTime, endTime, duration, status);
+
+                                    AttendanceRecord tempRecord = new AttendanceRecord(
+                                            startLocation, date, startTime, status);
                                     attendanceList.add(tempRecord);
                                 }
                                 adapter.notifyDataSetChanged();

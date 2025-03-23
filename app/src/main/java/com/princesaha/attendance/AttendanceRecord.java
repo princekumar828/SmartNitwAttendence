@@ -7,21 +7,15 @@ import java.util.Map;
 
 public class AttendanceRecord {
     private GeoPoint startLocation;
-    private GeoPoint endLocation;
     private String date;
     private String startTime;
-    private String endTime;
-    private String duration;
     private String status;
 
     // Constructor
-    public AttendanceRecord(GeoPoint startLocation, GeoPoint endLocation, String date, String startTime, String endTime, String duration, String status) {
+    public AttendanceRecord(GeoPoint startLocation, String date, String startTime, String status) {
         this.startLocation = startLocation;
-        this.endLocation = endLocation;
         this.date = date;
         this.startTime = startTime;
-        this.endTime = endTime;
-        this.duration = duration;
         this.status = status;
     }
 
@@ -34,19 +28,9 @@ public class AttendanceRecord {
         this.startLocation = startLocation;
     }
 
-    public GeoPoint getEndLocation() {
-        return endLocation;
-    }
-
-    public void setEndLocation(GeoPoint endLocation) {
-        this.endLocation = endLocation;
-    }
-
     public String getDate() {
         return date;
     }
-
-
 
     public void setDate(String date) {
         this.date = date;
@@ -60,22 +44,6 @@ public class AttendanceRecord {
         this.startTime = startTime;
     }
 
-    public String getEndTime() {
-        return endTime;
-    }
-
-    public void setEndTime(String endTime) {
-        this.endTime = endTime;
-    }
-
-    public String getDuration() {
-        return duration;
-    }
-
-    public void setDuration(String duration) {
-        this.duration = duration;
-    }
-
     public String getStatus() {
         return status;
     }
@@ -83,15 +51,12 @@ public class AttendanceRecord {
     public void setStatus(String status) {
         this.status = status;
     }
-    public Map<String, Double> getStartAndEndCoordinates() {
+
+    public Map<String, Double> getStartCoordinates() {
         Map<String, Double> coordinates = new HashMap<>();
         if (startLocation != null) {
-            coordinates.put("startLatitude", startLocation.getLatitude());
-            coordinates.put("startLongitude", startLocation.getLongitude());
-        }
-        if (endLocation != null) {
-            coordinates.put("endLatitude", endLocation.getLatitude());
-            coordinates.put("endLongitude", endLocation.getLongitude());
+            coordinates.put("latitude", startLocation.getLatitude());
+            coordinates.put("longitude", startLocation.getLongitude());
         }
         return coordinates;
     }

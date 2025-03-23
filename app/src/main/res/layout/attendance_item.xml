@@ -29,25 +29,7 @@
             android:id="@+id/startTimeTextView"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Start Time: 10:00 AM"
-            android:textSize="14sp"
-            android:textColor="#333333"
-            android:paddingBottom="4dp" />
-
-        <TextView
-            android:id="@+id/endTimeTextView"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="End Time: 11:00 AM"
-            android:textSize="14sp"
-            android:textColor="#333333"
-            android:paddingBottom="4dp" />
-
-        <TextView
-            android:id="@+id/durationTextView"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Duration: 60 mins"
+            android:text="Time: 10:00 AM"
             android:textSize="14sp"
             android:textColor="#333333"
             android:paddingBottom="4dp" />
@@ -65,19 +47,12 @@
             android:id="@+id/startLocationTextView"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Start Location: (12.9716, 77.5946)"
+            android:text="Location: (12.9716, 77.5946)"
             android:textSize="12sp"
             android:textColor="#333333"
             android:paddingBottom="4dp" />
 
-        <TextView
-            android:id="@+id/endLocationTextView"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="End Location: (12.9716, 77.5946)"
-            android:textSize="12sp"
-            android:textColor="#333333"
-            android:paddingBottom="4dp" />
+
 
     </LinearLayout>
 </androidx.cardview.widget.CardView>

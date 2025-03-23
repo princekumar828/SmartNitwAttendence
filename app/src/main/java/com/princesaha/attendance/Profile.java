@@ -58,6 +58,7 @@ public class Profile extends Fragment {
     private final OkHttpClient client = new OkHttpClient();
     private static final String FACE_RECOGNITION_API = ApiConfig.REGISTER_STUDENT_API;
     private static final String GET_STUDENT_IMAGE_API = ApiConfig.GET_STUDENT_IMAGE_API;
+    private Button logoutButton;
 
     private final ActivityResultLauncher<Intent> pickImageLauncher = registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(),
@@ -104,6 +105,7 @@ public class Profile extends Fragment {
         editButton = view.findViewById(R.id.editButton);
         saveButton = view.findViewById(R.id.saveButton);
         uploadFaceButton = view.findViewById(R.id.uploadFaceButton);
+        logoutButton = view.findViewById(R.id.logoutButton);
 
         // Initial state setup
         editName.setEnabled(false);
@@ -134,6 +136,7 @@ public class Profile extends Fragment {
 
         // Fetch and display user data
         fetchUserData();
+        logoutButton.setOnClickListener(v -> logoutUser());
 
         // Edit button logic
         editButton.setOnClickListener(v -> {
@@ -151,6 +154,32 @@ public class Profile extends Fragment {
     private void openImagePicker() {
         Intent intent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
         pickImageLauncher.launch(intent);
+    }
+
+    private void logoutUser() {
+        // Show confirmation dialog
+        new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                .setTitle("Logout")
+                .setMessage("Are you sure you want to logout?")
+                .setPositiveButton("Yes", (dialog, which) -> {
+                    // Sign out from Firebase Auth
+                    FirebaseAuth.getInstance().signOut();
+
+                    // Clear any stored credentials or tokens if needed
+                    // ...
+
+                    // Redirect to login screen
+                    Intent intent = new Intent(getActivity(), Login.class);
+                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                    startActivity(intent);
+
+                    // Close current activity
+                    if (getActivity() != null) {
+                        getActivity().finish();
+                    }
+                })
+                .setNegativeButton("No", null)
+                .show();
     }
 
     private void fetchUserData() {
