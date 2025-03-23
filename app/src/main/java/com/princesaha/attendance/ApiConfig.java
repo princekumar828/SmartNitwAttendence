@@ -2,7 +2,7 @@ package com.princesaha.attendance;
 
 public class ApiConfig {
     // Base URL (Change this to your actual server URL)
-    public static final String BASE_URL = "https://2ccb-2409-40e4-11fd-6e8a-82e-a141-5141-71b3.ngrok-free.app/";
+    public static final String BASE_URL = "https://feb4-2409-408a-b16-6c5b-44e-5a69-d740-d6ea.ngrok-free.app/";
 
     // API Endpoints
     public static final String  REGISTER_STUDENT_API= BASE_URL + "register_student";

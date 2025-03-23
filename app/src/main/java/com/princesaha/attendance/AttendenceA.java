@@ -53,6 +53,10 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import androidx.core.content.FileProvider;
+import android.net.Uri;
+import android.os.Environment;
+import java.io.File;
 
 public class AttendenceA extends AppCompatActivity {
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 100;
@@ -64,6 +68,7 @@ public class AttendenceA extends AppCompatActivity {
     private static final String API_ENDPOINT = ApiConfig.FACE_RECOGNITION_API; // Replace with your production API
 
     private ActivityAttendenceBinding binding;
+    private Uri photoUri;
     private ScheduleItem scheduleItem;
     private FusedLocationProviderClient fusedLocationClient;
     private FirebaseFirestore firestore;
@@ -305,36 +310,73 @@ public class AttendenceA extends AppCompatActivity {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST_CODE);
             return;
         }
-
-        // Launch camera for selfie
-        Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-        // Check if there's an app that can handle this intent
-        if (cameraIntent.resolveActivity(getPackageManager()) != null) {
-            startActivityForResult(cameraIntent, CAMERA_REQUEST_CODE);
-        } else {
+    
+        try {
+            // Create file for high-resolution photo
+            File photoFile = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES),
+                    "selfie_" + System.currentTimeMillis() + ".jpg");
+            
+            // Generate content URI using FileProvider
+            photoUri = FileProvider.getUriForFile(this,
+                    getApplicationContext().getPackageName() + ".provider", photoFile);
+    
+            // Launch camera with the URI
+            Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+            cameraIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoUri);
+            
+            // Grant permissions to the camera app
+            cameraIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            cameraIntent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            
+            if (cameraIntent.resolveActivity(getPackageManager()) != null) {
+                startActivityForResult(cameraIntent, CAMERA_REQUEST_CODE);
+            } else {
+                isProcessingAttendance = false;
+                Toast.makeText(this, "No camera app available", Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error creating camera intent: " + e.getMessage(), e);
             isProcessingAttendance = false;
-            Toast.makeText(this, "No camera app available", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Failed to launch camera", Toast.LENGTH_SHORT).show();
         }
     }
 
     @Override
-    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == CAMERA_REQUEST_CODE) {
-            if (resultCode == RESULT_OK && data != null && data.getExtras() != null) {
-                Bitmap photo = (Bitmap) data.getExtras().get("data");
-                if (photo != null) {
-                    sendSelfieForRecognition(photo);
-                } else {
-                    isProcessingAttendance = false;
-                    Toast.makeText(this, "Failed to capture photo", Toast.LENGTH_SHORT).show();
+protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+    super.onActivityResult(requestCode, resultCode, data);
+    if (requestCode == CAMERA_REQUEST_CODE) {
+        if (resultCode == RESULT_OK) {
+            try {
+                // Load the full-resolution image from URI
+                Bitmap fullResPhoto = MediaStore.Images.Media.getBitmap(getContentResolver(), photoUri);
+                
+                // Optional: Scale down if image is extremely large while maintaining aspect ratio
+                int maxDimension = 1024; // Good balance for face recognition
+                if (fullResPhoto.getWidth() > maxDimension || fullResPhoto.getHeight() > maxDimension) {
+                    float scale = Math.min(
+                        (float) maxDimension / fullResPhoto.getWidth(),
+                        (float) maxDimension / fullResPhoto.getHeight());
+                    
+                    int newWidth = Math.round(scale * fullResPhoto.getWidth());
+                    int newHeight = Math.round(scale * fullResPhoto.getHeight());
+                    
+                    fullResPhoto = Bitmap.createScaledBitmap(fullResPhoto, newWidth, newHeight, true);
                 }
-            } else {
+                
+                Log.d(TAG, "Using high-resolution image: " + fullResPhoto.getWidth() + "x" + fullResPhoto.getHeight());
+                sendSelfieForRecognition(fullResPhoto);
+                
+            } catch (Exception e) {
                 isProcessingAttendance = false;
-                Toast.makeText(this, "Selfie capture cancelled", Toast.LENGTH_SHORT).show();
+                Log.e(TAG, "Error processing high-res image: " + e.getMessage(), e);
+                Toast.makeText(this, "Failed to process photo", Toast.LENGTH_SHORT).show();
             }
+        } else {
+            isProcessingAttendance = false;
+            Toast.makeText(this, "Selfie capture cancelled", Toast.LENGTH_SHORT).show();
         }
     }
+}
 
     private void sendSelfieForRecognition(Bitmap photo) {
         Toast.makeText(this, "Processing your image...", Toast.LENGTH_SHORT).show();
